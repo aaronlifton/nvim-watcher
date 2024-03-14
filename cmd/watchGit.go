@@ -20,6 +20,7 @@ import (
 
 var p *mpb.Progress
 var wg sync.WaitGroup
+
 const batchSize = 3
 const barTotal = 100
 const lazypath = "/Users/aaron/.local/share/nvim/lazy"
@@ -76,7 +77,7 @@ func addBar(bnum int, i int, name string) *mpb.Bar {
 }
 
 func FetchUpdatesInBatches() {
-	p = mpb.New(mpb.WithWaitGroup(&wg))
+	command_chan := make(chan int)
 	dirs, err := os.ReadDir(lazypath)
 	if err != nil {
 		log.Fatalf("Failed to read directory: %v", err)
@@ -94,31 +95,72 @@ func FetchUpdatesInBatches() {
 	maxJobs := len(dirNames)
 	log.Printf("max_jobs = %d", maxJobs)
 	log.Print("\n")
-	wg.Add(batchSize)
+
 	for i := 0; i < maxJobs; i += batchSize {
-		log.Printf("Processing batch #%d", i/batchSize+1)
 		wg.Add(batchSize)
-		go func(i int) {
-			defer wg.Done()
-			batch := dirNames[i:min(i+batchSize, len(dirNames))]
-			for j, dirName := range batch {
-				bar := addBar(i, j, dirName)
-				absPath, err := filepath.Abs(filepath.Join(lazypath, dirName))
-				if err != nil {
-					log.Printf("Failed to get absolute path for %s: %v", dirName, err)
-					continue
+		p = mpb.New(mpb.WithWaitGroup(&wg))
+
+		for j := 0; j < batchSize; j++ {
+			index := (batchSize * i) + j
+			name := fmt.Sprintf("Batch#%d Job#%d Plugin#%s:", i/batchSize, j, dirNames[index])
+			bar := p.AddBar(int64(barTotal),
+				mpb.PrependDecorators(
+					decor.Name(name),
+					// decor.DSyncWidth bit enables column width synchronization
+					decor.Percentage(decor.WCSyncSpace),
+				),
+				mpb.AppendDecorators(
+					decor.OnComplete(
+						// ETA decorator with ewma age of 30
+						decor.EwmaETA(decor.ET_STYLE_GO, 30, decor.WCSyncWidth), "done",
+					),
+				),
+			)
+			// simulating some work
+			go func() {
+				defer wg.Done()
+				ticker := time.NewTicker(100 * time.Millisecond)
+				defer ticker.Stop()
+				if index < len(dirNames) {
+					go fetchGit(index, dirNames[index], bar, command_chan)
 				}
-				if err := fetchGit(absPath, bar); err != nil {
-					log.Printf("Failed to fetch git in %s: %v", dirName, err)
-				}
-			}
-		}(i)
-		wg.Wait()
+				for {
+					select {
+					case <-ticker.C:
+						start := time.Now()
+						bar.EwmaIncrement(time.Since(start))
+						if bar.Current() >= barTotal {
+							break
+						}
+					case <-command_chan:
+						log.Printf("Command received")
+						bar.SetCurrent(barTotal)
+						break;
+					case <-time.After(10 * time.Second):
+						log.Printf("Timeout (10 s)")
+					}
+				} // rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+				// max := 100 * time.Millisecond
+				// if index < len(dirNames) {
+				//     go fetchGit(dirNames[index], bar)
+				// }
+				// for i := 0; i < barTotal; i++ {
+				//     // start variable is solely for EWMA calculation
+				//     // EWMA's unit of measure is an iteration's duration
+				//     start := time.Now()
+				//     time.Sleep(time.Duration(rng.Intn(10)+1) * max / 10)
+				//     // we need to call EwmaIncrement to fulfill ewma decorator's contract
+				//     bar.EwmaIncrement(time.Since(start))
+				// }
+			}()
+		}
+		// wait for passed wg and for all bars to complete and flush
+		p.Wait()
 	}
 }
 
 // fetchGit runs 'git fetch' in the specified directory
-func fetchGit(dirName string, bar *mpb.Bar) error {
+func fetchGit(index int, dirName string, bar *mpb.Bar, c chan int) error {
 	args := []string{
 		"fetch",
 		"--recurse-submodules",
@@ -129,40 +171,15 @@ func fetchGit(dirName string, bar *mpb.Bar) error {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dirName
 
-
-
-	log.Println("Running git fetch in", dirName)
-	log.Printf("cmd: %s", cmd)
-	cmd.Dir = dirName
-	start := time.Now() // Start time for tracking progress
-
-	// Create a goroutine to increment the progress bar based on the elapsed time
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for {
-			select {
-			case <-done:
-				return
-			default:
-				bar.EwmaIncrement(time.Since(start))
-				time.Sleep(100 * time.Millisecond) // Adjust the sleep duration as needed
-			}
-		}
-	}()
-
+	absPath := filepath.Join(lazypath, dirName)
+	log.Printf("CMD: %s in %s", cmd, absPath)
 	err := cmd.Run()
-
-	// Signal the progress bar increment goroutine to stop
-	done <- struct{}{}
-
 	if err != nil {
-		bar.SetCurrent(0) // Reset the bar to 0 on error
-		return err
-	} else {
-		bar.SetCurrent(barTotal) // Set the bar to 100% on success
+		return fmt.Errorf("Failed to run command %s in %s: %v", cmd, dirName, err)
+		// bar.SetCurrent(0)
 	}
-
+	bar.SetCurrent(barTotal)
+	c <- index
 	return nil
 }
 
