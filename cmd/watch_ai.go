@@ -1,5 +1,5 @@
 /*
-Copyright © 2024 NAME HERE <EMAIL ADDRESS>
+Copyright © 2024 Aaron Lifton <aaronlifton@gmail.com>
 */
 package cmd
 
@@ -17,7 +17,7 @@ import (
 // watchAisCmd represents the watchAis command
 var watchAisCmd = &cobra.Command{
 	Use:   "watch-ai",
-	Short: "A brief description of your command",
+	Short: "Supervise AI plugins like ChatGPT CodeGPT, TabNine, Codeium, and Copilot.",
 	Long: `A longer description that spans multiple lines and likely contains examples
 and usage of using your command. For example:
 
