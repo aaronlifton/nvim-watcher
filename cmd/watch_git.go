@@ -104,10 +104,6 @@ func fetchUpdatesInBatches(outdatedDirs []string) {
 	log.FileLogger.Debugf("max_jobs = %d", maxJobs)
 	log.FileLogger.Debugln("")
 
-	// p := mpb.New(
-	// 		mpb.WithOutput(color.Output),
-	// 		mpb.WithAutoRefresh(),
-	// 	)
 	for i := 0; i < maxJobs; i += batchSize {
 		var wg sync.WaitGroup
 		wg.Add(batchSize)
@@ -271,35 +267,41 @@ func min(x, y int) int {
 
 // }
 
+func tryRunAndLog(cmd *exec.Cmd) error {
+	log.ConsoleLogger.Infof("Running %s", cmd.String())
+	log.LogGitCommand(cmd)
+	stdoutStderr, err := cmd.CombinedOutput()
+	log.GitLogger.Infoln(string(stdoutStderr))
+	if err != nil {
+		return err
+	} else {
+		return stdoutStderr
+	}
+}
+
 func checkoutMainBranch(dirPath string, branchName string) {
 	dirName := filepath.Base(dirPath)
 	cmd := exec.Command("git", "-C", dirPath, "fetch", "origin", branchName)
-	if err := cmd.Run(); err != nil {
-		log.FileLogger.Errorf("Failed to fetch 'main' branch for %s: %v", dirName, err)
+  tryRunAndLog(cmd); err != nil {
+		log.ConsoleLogger.Errorf("Failed to fetch 'main' branch for %s: %v", dirName, err)
 	} else {
 		// Checkout the fetched main branch
 		args := []string{"-C", dirPath, "checkout", branchName}
 		cmd = exec.Command("git", args...)
-		log.GitLogger.Info("CMD",
-			zap.Dict(
-				"command",
-				zap.String("cmd", "git"),
-				zap.String("args", strings.Join(args, " ")),
-				zap.String("dir", dirPath)),
-		)
-
-		log.CombinedGitLogger.Infof("Running %s", cmd.String())
-		stdoutStderr, err := cmd.CombinedOutput()
-		log.GitLogger.Infoln(stdoutStderr)
-		if err != nil {
-			log.FileLogger.Errorf("Failed to checkout 'main' branch for %s: %v", dirName, err)
-		} else {
-			log.FileLogger.Infof("Checked out 'main' branch for %s", dirName)
+		tryRunAndLog(cmd); err != nil {
+			log.ConsoleLogger.Errorf("Failed to checkout 'main' branch for %s: %v", dirName, err)
 		}
 	}
 }
 
 func findOutdatedPlugins() []string {
+	args := make([]string, 0)
+	procAttr := os.ProcAttr{
+		Dir: "/Users/aaron/.local/share/nvim/lazy",
+		Env: os.Environ(),
+		Files: []*os.File{os.Stdin, os.Stdout, os.Stderr},
+	}
+	os.StartProcess("pkill git",args, &procAttr)
 	log.CombinedLogger.Infoln("Finding outdated plugins")
 	lazypath := "/Users/aaron/.local/share/nvim/lazy"
 	dirs, err := os.ReadDir(lazypath)
@@ -308,9 +310,30 @@ func findOutdatedPlugins() []string {
 		log.ConsoleLogger.Errorf("Failed to read directory: %v", err)
 		return []string{}
 	}
+	var wg sync.WaitGroup
+	p = mpb.New(
+		mpb.WithWidth(64),
+		mpb.WithWaitGroup(&wg),
+		// mpb.WithShutdownNotifier(done),
+	)
+	bar := p.AddBar(int64(barTotal),
+		mpb.PrependDecorators(
+			decor.Name("Checking packages..."),
+			// decor.DSyncWidth bit enables column width synchronization
+			decor.Percentage(decor.WCSyncSpace),
+		),
+		mpb.AppendDecorators(
+			decor.OnComplete(
+				// ETA decorator with ewma age of 30
+				decor.EwmaETA(decor.ET_STYLE_GO, 30, decor.WCSyncWidth), "done",
+			),
+		),
+	)
 
+	const dur = 300 * time.Millisecond
 	outdatedCount := 0
 	for _, dir := range dirs {
+		bar.EwmaIncrement(dur)
 		if !dir.IsDir() {
 			continue
 		}
@@ -360,7 +383,7 @@ func findOutdatedPlugins() []string {
 					zap.String("dir", dirPath)),
 			)
 			stdoutStderr, _ := cmd.CombinedOutput()
-			log.GitLogger.Infoln(stdoutStderr)
+			log.GitLogger.Infoln(string(stdoutStderr))
 			if strings.Contains(string(stdoutStderr), "not a valid ref") {
 				mainBranchExists = false
 			} else {
@@ -378,9 +401,10 @@ func findOutdatedPlugins() []string {
 			}
 		}
 	}
+	bar.SetCurrent(100)
 
 	log.CombinedLogger.Infof("Found %d directories in %s", len(dirs), lazypath)
-	log.CombinedLogger.Infof("Number of outdated plugins: %d", outdatedCount)
+	log.CombinedLogger.Infof("Found %d outdated plugins", outdatedCount)
 	// Do we need to allocate for all dirs? Don't think so.'
   return outdatedPlugins
 }

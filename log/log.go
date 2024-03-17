@@ -2,8 +2,11 @@ package log
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
+	"github.com/aaronlifton/nvim-watcher/log"
 	ps "github.com/mitchellh/go-ps"
 	"github.com/natefinch/lumberjack"
 
@@ -104,4 +107,16 @@ func Init() {
 	// 	zap.DebugLevel,
 	// )
 	// log = zap.New(core)
+}
+
+func LogGitCommand(cmd *exec.Cmd) {
+	name := cmd[0]
+	args := strings.Join(cmd[1:]
+	log.GitLogger.Info("Ran git command",
+		zap.Dict(
+			"command",
+			zap.String("cmd", "git"),
+			zap.String("args", cmd.Args[]...),
+			zap.String("dir", cmd.Dir)),
+	)
 }
