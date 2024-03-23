@@ -80,12 +80,26 @@ func addBar(bnum int, i int, name string) *mpb.Bar {
 	)
 	return bar
 }
+func filterDirsBasedOnFetchOption(dirs []os.DirEntry) {
+	var dirNames []string
+	if options.ShouldFetchAll {
+		for _, dir := range dirs {
+			if dir.IsDir() {
+				dirNames = append(dirNames, dir.Name())
+			}
+		}
+	} else {
+		dirNames = options.OutdatedPlugins
+	}
+
+	return dirNames
+}
 
 func fetchUpdatesInBatches(outdatedDirs []string) {
 	done := make(chan interface{})
 	dirs, err := os.ReadDir(lazypath)
 	if err != nil {
-		log.ConsoleLogger.Errorf("Failed to read directory: %v", err)
+		log.ConsoleLogger.Fatalf("Failed to read directory: %v", err)
 	}
 
 	// Filter out non-directory files
@@ -102,7 +116,7 @@ func fetchUpdatesInBatches(outdatedDirs []string) {
 	// Process directories in batches of batchSize (default 3)
 	maxJobs := len(dirNames)
 	log.FileLogger.Debugf("max_jobs = %d", maxJobs)
-	log.FileLogger.Debugln("")
+	log.FileLogger.Info("")
 
 	for i := 0; i < maxJobs; i += batchSize {
 		var wg sync.WaitGroup
