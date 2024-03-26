@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/aaronlifton/nvim-watcher/log"
 	ps "github.com/mitchellh/go-ps"
 	"github.com/natefinch/lumberjack"
 
@@ -17,17 +16,17 @@ import (
 )
 
 var (
-	stdLog         *stdlog.Logger
-	FileLogger     *zap.SugaredLogger
-	ConsoleLogger  *zap.SugaredLogger
-	CombinedLogger *zap.SugaredLogger
-	GitLogger *zap.SugaredLogger
+	stdLog            *stdlog.Logger
+	FileLogger        *zap.SugaredLogger
+	ConsoleLogger     *zap.SugaredLogger
+	CombinedLogger    *zap.SugaredLogger
+	GitLogger         *zap.SugaredLogger
 	CombinedGitLogger *zap.SugaredLogger
 )
 
 type ProcessAction struct {
-	ActionType string
 	Process    *ps.Process
+	ActionType string
 }
 
 func (a ProcessAction) MarshalLogObject(enc zapcore.ObjectEncoder) error {
@@ -44,6 +43,9 @@ func (a ProcessAction) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 // 	return enc.AddObject("remote", r.Remote)
 // }
 
+// Init initializes the loggers
+// CombinedLogger is for logging to both console and file
+// GitLogger is for logging explicit git commands only
 func Init() {
 	config := zap.NewProductionEncoderConfig()
 	// config := zap.NewDevelopmentEncoderConfig()
@@ -68,9 +70,9 @@ func Init() {
 	// )
 	// core := zapcore.NewTee(
 	//        zapcore.NewCore(fileEncoder, zapcore.AddSync(file), zap.DebugLevel),
-	//        zapcore.NewCore(consoleEncoder, zapcore.AddSync(os.Stdout), zap.DebugLevel),
+	//    1    zapcore.NewCore(consoleEncoder, zapcore.AddSync(os.Stdout), zap.DebugLevel),
 	//    )
-	var cores = make([]zapcore.Core, 3)
+	cores := make([]zapcore.Core, 3)
 	core := zapcore.NewCore(
 		zapcore.NewJSONEncoder(config),
 		zapcore.AddSync(fileWriter),
@@ -110,13 +112,20 @@ func Init() {
 }
 
 func LogGitCommand(cmd *exec.Cmd) {
-	name := cmd[0]
-	args := strings.Join(cmd[1:]
-	log.GitLogger.Info("Ran git command",
+	process, err := ps.FindProcess(cmd.Process.Pid)
+	if err != nil {
+		CombinedLogger.Fatal(
+			"Failed to find process",
+			zap.Int("pid", process.Pid()),
+			zap.Error(err),
+		)
+	}
+	GitLogger.Info("Ran git command",
 		zap.Dict(
 			"command",
-			zap.String("cmd", "git"),
-			zap.String("args", cmd.Args[]...),
-			zap.String("dir", cmd.Dir)),
+			zap.String("name", process.Executable()),
+			zap.String("args", strings.Join(cmd.Args, ", ")),
+			zap.String("dir", cmd.Dir),
+			zap.String("full_command", cmd.String())),
 	)
 }

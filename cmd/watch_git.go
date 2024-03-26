@@ -8,28 +8,34 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/aaronlifton/nvim-watcher/log"
+	"github.com/mitchellh/go-ps"
 	"github.com/spf13/cobra"
 	"github.com/vbauerster/mpb/v8"
 	"github.com/vbauerster/mpb/v8/decor"
 	"go.uber.org/zap"
 )
 
-var p *mpb.Progress
-var wg sync.WaitGroup
-var outdatedPlugins []string
-var ShouldFetchAll bool
+var (
+	p               *mpb.Progress
+	wg              sync.WaitGroup
+	outdatedPlugins []string
+	ShouldFetchAll  bool
+)
 
-const batchSize = 3
-const barTotal = 100
-const lazypath = "/Users/aaron/.local/share/nvim/lazy"
+const (
+	batchSize = 3
+	barTotal  = 100
+	lazypath  = "/Users/aaron/.local/share/nvim/lazy"
+)
 
-// updateGitCmd represents the updateGit command
-var updateGitCmd = &cobra.Command{
+// UpdatePluginsCmd represents the updateGit command
+var UpdatePluginsCmd = &cobra.Command{
 	Use:   "watch-git",
 	Short: "Updates all neovim plugins in batches.",
 	Long: `* Updating packages asynchronously to prevent ERR_NO_FILES (OSX Ulimit) errors
@@ -44,8 +50,8 @@ var updateGitCmd = &cobra.Command{
 }
 
 func init() {
-	updateGitCmd.Flags().BoolVarP(&ShouldFetchAll, "fetch_all", "a", false, "Fetch all plugins, rather than just the outdated ones.")
-	rootCmd.AddCommand(updateGitCmd)
+	UpdatePluginsCmd.Flags().BoolVarP(&ShouldFetchAll, "fetch_all", "a", false, "Fetch all plugins, rather than just the outdated ones.")
+	rootCmd.AddCommand(UpdatePluginsCmd)
 
 	log.Init()
 	// zap.RedirectStdLog(log.GetConsoleLogger().Desugar())
@@ -54,11 +60,11 @@ func init() {
 
 	// Cobra supports Persistent Flags which will work for this command
 	// and all subcommands, e.g.:
-	// updateGitCmd.PersistentFlags().String("foo", "", "A help for foo")
+	// UpdatePluginsCmd.PersistentFlags().String("foo", "", "A help for foo")
 
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
-	// updateGitCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// UpdatePluginsCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
 
 func addBar(bnum int, i int, name string) *mpb.Bar {
@@ -80,19 +86,19 @@ func addBar(bnum int, i int, name string) *mpb.Bar {
 	)
 	return bar
 }
-func filterDirsBasedOnFetchOption(dirs []os.DirEntry) {
-	var dirNames []string
-	if options.ShouldFetchAll {
+
+func filterDirsBasedOnFetchOption(dirs []os.DirEntry) (filteredDirs []string) {
+	if ShouldFetchAll {
 		for _, dir := range dirs {
 			if dir.IsDir() {
-				dirNames = append(dirNames, dir.Name())
+				filteredDirs = append(filteredDirs, dir.Name())
 			}
 		}
 	} else {
-		dirNames = options.OutdatedPlugins
+		filteredDirs = outdatedPlugins
 	}
 
-	return dirNames
+	return filteredDirs
 }
 
 func fetchUpdatesInBatches(outdatedDirs []string) {
@@ -103,18 +109,18 @@ func fetchUpdatesInBatches(outdatedDirs []string) {
 	}
 
 	// Filter out non-directory files
-	var dirNames []string
+	var filteredDirs []string
 	if ShouldFetchAll == true {
 		for _, dir := range dirs {
 			if dir.IsDir() {
-				dirNames = append(dirNames, dir.Name())
+				filteredDirs = append(filteredDirs, dir.Name())
 			}
 		}
-	} else  {
-		dirNames = outdatedPlugins
+	} else {
+		filteredDirs = outdatedPlugins
 	}
 	// Process directories in batches of batchSize (default 3)
-	maxJobs := len(dirNames)
+	maxJobs := len(filteredDirs)
 	log.FileLogger.Debugf("max_jobs = %d", maxJobs)
 	log.FileLogger.Info("")
 
@@ -129,11 +135,11 @@ func fetchUpdatesInBatches(outdatedDirs []string) {
 
 		for j := 0; j < batchSize; j++ {
 			index := (batchSize * i) + j
-			if index >= len(dirNames) {
+			if index >= len(filteredDirs) {
 				wg.Done()
 				continue
 			}
-			name := fmt.Sprintf("Batch#%d Job#%d Plugin#%s:", i/batchSize, j, dirNames[index])
+			name := fmt.Sprintf("Batch#%d Job#%d Plugin#%s:", i/batchSize, j, filteredDirs[index])
 			bar := p.AddBar(int64(barTotal),
 				mpb.PrependDecorators(
 					decor.Name(name),
@@ -175,7 +181,7 @@ func fetchUpdatesInBatches(outdatedDirs []string) {
 				}
 			}()
 			qwg.Wait()
-			go fetchGit(index, dirNames[index], bar, done)
+			go fetchGit(index, filteredDirs[index], bar, done)
 			// p.Wait()
 			// go func() {
 			// 			defer wg.Done()
@@ -238,14 +244,6 @@ func fetchGit(index int, dirName string, bar *mpb.Bar, done chan interface{}) er
 	return nil
 }
 
-// min returns the smaller of x or y
-func min(x, y int) int {
-	if x < y {
-		return x
-	}
-	return y
-}
-
 // func writeCmdOutput() {
 // 	outputFilePath := "logs/cmd_output.log"
 // 	cwd, err := os.Getwd()
@@ -281,43 +279,60 @@ func min(x, y int) int {
 
 // }
 
-func tryRunAndLog(cmd *exec.Cmd) error {
+func tryRunAndLog(cmd *exec.Cmd) (string, error) {
 	log.ConsoleLogger.Infof("Running %s", cmd.String())
 	log.LogGitCommand(cmd)
 	stdoutStderr, err := cmd.CombinedOutput()
 	log.GitLogger.Infoln(string(stdoutStderr))
-	if err != nil {
-		return err
-	} else {
-		return stdoutStderr
-	}
+	return string(stdoutStderr[:]), err
 }
 
 func checkoutMainBranch(dirPath string, branchName string) {
 	dirName := filepath.Base(dirPath)
 	cmd := exec.Command("git", "-C", dirPath, "fetch", "origin", branchName)
-  tryRunAndLog(cmd); err != nil {
-		log.ConsoleLogger.Errorf("Failed to fetch 'main' branch for %s: %v", dirName, err)
-	} else {
-		// Checkout the fetched main branch
-		args := []string{"-C", dirPath, "checkout", branchName}
-		cmd = exec.Command("git", args...)
-		tryRunAndLog(cmd); err != nil {
-			log.ConsoleLogger.Errorf("Failed to checkout 'main' branch for %s: %v", dirName, err)
-		}
+	stdoutStderr, err := tryRunAndLog(cmd)
+	if err != nil {
+		log.ConsoleLogger.Errorf(
+			"Failed to fetch 'main' branch for %s: %v", dirName, err,
+		)
 	}
+	log.CombinedGitLogger.Infoln(stdoutStderr)
+	// Checkout the fetched main branch
+	args := []string{"-C", dirPath, "checkout", branchName}
+	cmd = exec.Command("git", args...)
+	stdoutStderr, err = tryRunAndLog(cmd)
+	if err != nil {
+		log.ConsoleLogger.Errorf(
+			"Failed to checkout 'main' branch for %s: %v", dirName, err,
+		)
+	}
+	zap.S().Info(stdoutStderr)
+	log.CombinedGitLogger.Info(stdoutStderr)
 }
 
 func findOutdatedPlugins() []string {
-	args := make([]string, 0)
-	procAttr := os.ProcAttr{
-		Dir: "/Users/aaron/.local/share/nvim/lazy",
-		Env: os.Environ(),
-		Files: []*os.File{os.Stdin, os.Stdout, os.Stderr},
+	gitPids := make([]int, 0)
+	processes, err := ps.Processes()
+	if err != nil {
+		log.CombinedLogger.Fatalf("Failed to get processes: %v", err)
 	}
-	os.StartProcess("pkill git",args, &procAttr)
+	for _, p := range processes {
+		if strings.Contains(p.Executable(), "git") {
+			gitPids = append(gitPids, p.Pid())
+		}
+	}
+	if len(gitPids) >= 0 {
+		pidStrings := make([]string, len(gitPids))
+		for i, pid := range gitPids {
+			pidStrings[i] = strconv.Itoa(pid)
+		}
+		log.CombinedLogger.Fatalf(
+			"Conflicting git processes running: %s",
+			strings.Join(pidStrings, ", "),
+		)
+	}
 	log.CombinedLogger.Infoln("Finding outdated plugins")
-	lazypath := "/Users/aaron/.local/share/nvim/lazy"
+	lazypath := filepath.Join(os.Getenv("HOME"), ".local/share/nvim/lazy")
 	dirs, err := os.ReadDir(lazypath)
 	outdatedDirs := make([]string, len(dirs))
 	if err != nil {
@@ -362,7 +377,7 @@ func findOutdatedPlugins() []string {
 		args := []string{"-C", dirPath, "status", "-uno"}
 		cmd := exec.Command("git", args...)
 		output, err := cmd.Output()
-		log.FileLogger.Debug("CMD",
+		log.CombinedLogger.Debugln("CMD",
 			zap.Dict(
 				"command",
 				zap.String("command", "git"),
@@ -379,17 +394,17 @@ func findOutdatedPlugins() []string {
 		dirName := filepath.Base(dirPath)
 		if strings.Contains(strOut, "Your branch is behind") {
 			outdatedDirs = append(outdatedDirs, dirPath)
-			log.FileLogger.Infof("Found an outdated plugin (%s)", dirName)
+			log.CombinedLogger.Infof("Found an outdated plugin (%s)", dirName)
 		} else if strings.Contains(strOut, "HEAD detached at") {
 			// Check for the presence of a 'main' or 'master' branch
 			mainBranchExists := false
 			masterBranchExists := false
 			outdatedDirs = append(outdatedDirs, dirPath)
 
-			args := []string{"-C", dirPath, "show-ref", "--verify",  "refs/heads/main"}
+			args := []string{"-C", dirPath, "show-ref", "--verify", "refs/heads/main"}
 			cmd := exec.Command("git", args...)
-			log.CombinedGitLogger.Infof("Running %s", cmd.String())
-			log.GitLogger.Debug("CMD",
+			log.CombinedLogger.Infof("Running %s", cmd.String())
+			log.CombinedLogger.Debug("CMD",
 				zap.Dict(
 					"command",
 					zap.String("command", "git"),
@@ -397,21 +412,21 @@ func findOutdatedPlugins() []string {
 					zap.String("dir", dirPath)),
 			)
 			stdoutStderr, _ := cmd.CombinedOutput()
-			log.GitLogger.Infoln(string(stdoutStderr))
+			log.CombinedLogger.Infoln(string(stdoutStderr))
 			if strings.Contains(string(stdoutStderr), "not a valid ref") {
 				mainBranchExists = false
 			} else {
 				mainBranchExists = true
 			}
 
-			if (mainBranchExists) {
+			if mainBranchExists {
 				checkoutMainBranch(dirPath, "main")
 			} else {
 				checkoutMainBranch(dirPath, "master")
 			}
 
-			if (!masterBranchExists && !mainBranchExists) {
-				log.FileLogger.Infof("Plugin %s does not have a 'main' or 'master' branch", dirName)
+			if !masterBranchExists && !mainBranchExists {
+				log.CombinedLogger.Infof("Plugin %s does not have a 'main' or 'master' branch", dirName)
 			}
 		}
 	}
@@ -420,5 +435,5 @@ func findOutdatedPlugins() []string {
 	log.CombinedLogger.Infof("Found %d directories in %s", len(dirs), lazypath)
 	log.CombinedLogger.Infof("Found %d outdated plugins", outdatedCount)
 	// Do we need to allocate for all dirs? Don't think so.'
-  return outdatedPlugins
+	return outdatedPlugins
 }

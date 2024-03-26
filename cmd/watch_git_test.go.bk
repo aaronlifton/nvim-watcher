@@ -1,0 +1,40 @@
+/*
+Copyright © 2024 Aaron Lifton <aaronlifton@gmail.com>
+*/
+package cmd
+
+import (
+	"bytes"
+	"io"
+	"testing"
+)
+
+//	func Test_findOutdatedPlugins(t *testing.T) {
+//		tests := []struct {
+//			name string
+//			want []string
+//		}{
+//			// TODO: Add test cases.
+//		}
+//		for _, tt := range tests {
+//			t.Run(tt.name, func(t *testing.T) {
+//				if got := findOutdatedPlugins(); !reflect.DeepEqual(got, tt.want) {
+//					t.Errorf("findOutdatedPlugins() = %v, want %v", got, tt.want)
+//				}
+//			})
+//		}
+//	}
+func Test_ExecuteCommand(t *testing.T) {
+	cmd := UpdatePluginsCmd
+	b := bytes.NewBufferString("")
+	cmd.SetArgs([]string{})
+	cmd.SetOut(b)
+	cmd.Execute()
+	out, err := io.ReadAll(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != "hi" {
+		t.Fatalf("expected \"%s\" got \"%s\"", "hi", string(out))
+	}
+}

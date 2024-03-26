@@ -41,4 +41,5 @@ func init() {
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
 	rootCmd.Flags().Int("batchSize", 3, "Number of plugins to update in parallel")
+	rootCmd.AddCommand(NewWatchProcessesCmd())
 }
