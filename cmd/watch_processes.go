@@ -12,6 +12,12 @@ import (
 
 	// kill "github.com/jesseduffield/kill"
 	ps "github.com/mitchellh/go-ps"
+
+	// "github.com/shirou/gopsutil/v3/cpu"
+	// "github.com/shirou/gopsutil/v3/load"
+	"github.com/shirou/gopsutil/v3/mem"
+	// "github.com/shirou/gopsutil/v3/net"
+	// "github.com/shirou/gopsutil/v3/process"
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +26,8 @@ func NewWatchProcessesCmd() *cobra.Command {
 		Use:   "watch-processes",
 		Short: "Supervise processes left behind by AI plugins like ChatGPT, CodeGPT, TabNine, Codeium, and Copilot.",
 		Run: func(cmd *cobra.Command, args []string) {
-			RunWatchProcesses()
+			// RunWatchProcesses()
+			Test()
 		},
 	}
 }
@@ -31,15 +38,24 @@ type ProcessManager struct {
 
 func (pm *ProcessManager) GetProcesses() ([]ps.Process, error) {
 	pm.Calls++
-	processList, err := ps.Processes()
-	return processList, err
+	return ps.Processes()
 }
 
-var Executables = []string{"nvim", "TabNine", "Codeium", "Copilot"}
+var Executables = []string{"nvim", "TabNine", "codeium", "Copilot", "sourcery", "biomesyncd", "biome"}
+
+func Test() {
+	memInfo, err := mem.VirtualMemory()
+	if err != nil {
+		log.ConsoleLogger.Fatalf("Failed to get memory: %v", err)
+	}
+	log.ConsoleLogger.Infof("Memory: %v", memInfo.UsedPercent)
+}
 
 func RunWatchProcesses() []ps.Process {
 	log.Init()
 	// processList, err := ps.Processes()
+	// readlink /proc/<pid>/exe
+
 	pm := &ProcessManager{}
 	relevantProcesses := make([]ps.Process, 2)
 	processList, err := pm.GetProcesses()
@@ -49,6 +65,7 @@ func RunWatchProcesses() []ps.Process {
 
 	for _, process := range processList {
 		log.FileLogger.Infof("Process: %v", log.ProcessAction{ActionType: "list", Process: &process})
+
 		exe := process.Executable()
 		if slices.Contains(Executables, exe) {
 			log.ConsoleLogger.Infof("%d\t%s\n", process.Pid(), process.Executable())

@@ -330,6 +330,7 @@ func findOutdatedPlugins() []string {
 			"Conflicting git processes running: %s",
 			strings.Join(pidStrings, ", "),
 		)
+		log.CombinedLogger.Fatalf("No git processes found")
 	}
 	log.CombinedLogger.Infoln("Finding outdated plugins")
 	lazypath := filepath.Join(os.Getenv("HOME"), ".local/share/nvim/lazy")
@@ -360,7 +361,6 @@ func findOutdatedPlugins() []string {
 	)
 
 	const dur = 300 * time.Millisecond
-	outdatedCount := 0
 	for _, dir := range dirs {
 		bar.EwmaIncrement(dur)
 		if !dir.IsDir() {
@@ -432,6 +432,7 @@ func findOutdatedPlugins() []string {
 	}
 	bar.SetCurrent(100)
 
+	outdatedCount := len(outdatedDirs)
 	log.CombinedLogger.Infof("Found %d directories in %s", len(dirs), lazypath)
 	log.CombinedLogger.Infof("Found %d outdated plugins", outdatedCount)
 	// Do we need to allocate for all dirs? Don't think so.'

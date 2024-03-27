@@ -2096,3 +2096,4 @@
 {"level":"info","ts":"2024-03-25T20:43:04.679-0400","msg":"14870\tmain\n"}
 {"level":"info","ts":"2024-03-25T20:43:04.679-0400","msg":"14870\tmain\n"}
 {"level":"info","ts":"2024-03-25T20:43:04.679-0400","msg":"14870\tmain\n"}
+{"level":"fatal","ts":"2024-03-27T00:33:08.428-0400","msg":"Conflicting git processes running: "}
