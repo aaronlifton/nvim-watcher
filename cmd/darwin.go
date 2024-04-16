@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"log"
+	"slices"
 	"syscall"
 	"unsafe"
 
@@ -90,6 +91,21 @@ func darwinCstring(s [16]byte) string {
 	return string(s[:i])
 }
 
+// This Go function `darwinSyscall()` is making a system call to retrieve information about all processes running on a Darwin-based system (like macOS).
+//
+// Here's a breakdown of what the code is doing:
+//
+// 1. It sets up the `mib` array containing specific values that are used by the `sysctl` system call to query information about processes.
+//
+// 2. It then calls `syscall.Syscall6` with a `size` value of 0 to determine the required buffer size to hold the process information.
+//
+// 3. If the call is successful, it allocates a byte slice `bs` of the determined size to store the process data.
+//
+// 4. It then calls `syscall.Syscall6` again, this time passing the allocated buffer as an argument to retrieve the process data.
+//
+// 5. Finally, it creates a `bytes.Buffer` using the retrieved data and returns it along with a `nil` error if the syscall is successful.
+//
+// In summary, this function is using low-level system calls to interact with the kernel and retrieve information about processes on a Darwin-based system.
 func darwinSyscall() (*bytes.Buffer, error) {
 	mib := [4]int32{_CTRL_KERN, _KERN_PROC, _KERN_PROC_ALL, 0}
 	size := uintptr(0)
@@ -141,10 +157,54 @@ type kinfoProc struct {
 	_    [84]byte
 }
 
-func Run() {
+func GetProcesses() []gps.Process {
 	buf, err := darwinSyscall()
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Println(buf)
+	firstProc := &kinfoProc{}
+	err = binary.Read(buf, binary.LittleEndian, firstProc)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	procs, err := processes()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	wantedExecutables := []string{
+		"Codeium",
+		"Copilot",
+		"TabNine",
+		"biome",
+		"biome-agent",
+		"biome-registry",
+		"biome-service",
+		"biomesyncd",
+		"clangd",
+		"cssls",
+		"gopls",
+		"html_ls",
+		"jedi_language_server",
+		"json_ls",
+		"nvim",
+		"pyls",
+		"rust-analyzer",
+		"sourcery",
+		"sqls",
+		"sumneko_lua",
+		"terraform-ls",
+		"tsserver",
+	}
+	relevantProcs := make([]gps.Process, 0, 50)
+	for _, p := range procs {
+		if slices.Contains(wantedExecutables, p.Executable()) {
+			relevantProcs = append(relevantProcs, p)
+		}
+	}
+	for _, p := range relevantProcs {
+		log.Printf("PID: %d, PPID: %d, Executable: %s\n", p.Pid(), p.PPid(), p.Executable())
+	}
+	return relevantProcs
 }

@@ -2097,3 +2097,13 @@
 {"level":"info","ts":"2024-03-25T20:43:04.679-0400","msg":"14870\tmain\n"}
 {"level":"info","ts":"2024-03-25T20:43:04.679-0400","msg":"14870\tmain\n"}
 {"level":"fatal","ts":"2024-03-27T00:33:08.428-0400","msg":"Conflicting git processes running: "}
+{"level":"fatal","ts":"2024-03-27T11:30:13.093-0400","msg":"Conflicting git processes running: "}
+{"level":"fatal","ts":"2024-03-27T11:35:50.479-0400","msg":"0 conflicting git processes running: "}
+{"level":"fatal","ts":"2024-03-27T11:36:52.063-0400","msg":"0 conflicting git processes running: "}
+{"level":"fatal","ts":"2024-03-27T11:37:05.865-0400","msg":"0 conflicting git processes running: "}
+{"level":"info","ts":"2024-03-27T12:25:47.206-0400","msg":"Finding outdated plugins"}
+{"level":"info","ts":"2024-03-27T12:25:47.230-0400","msg":"Running /usr/bin/git -C /Users/aaron/.local/share/nvim/lazy/ChatGPT.nvim show-ref --verify refs/heads/main"}
+{"level":"info","ts":"2024-03-27T12:25:47.241-0400","msg":"aadb607038d53d97be4da368b07355f65ad3f047 refs/heads/main\n"}
+{"level":"info","ts":"2024-03-27T12:34:33.521-0400","msg":"Finding outdated plugins"}
+{"level":"info","ts":"2024-03-27T12:34:33.548-0400","msg":"Running /usr/bin/git -C /Users/aaron/.local/share/nvim/lazy/ChatGPT.nvim show-ref --verify refs/heads/main"}
+{"level":"info","ts":"2024-03-27T12:34:33.559-0400","msg":"aadb607038d53d97be4da368b07355f65ad3f047 refs/heads/main\n"}

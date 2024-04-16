@@ -1,0 +1,9 @@
+with-expecter: true
+packages:
+  github.com/aaronlifton/nvim-watcher:
+    # place your package-specific config here
+    config:
+    interfaces:
+      # select the interfaces you want mocked
+      Kill:
+      Cmd:
