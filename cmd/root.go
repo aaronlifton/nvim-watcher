@@ -12,14 +12,10 @@ import (
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "nvim-watcher",
-	Short: "Nvim-watcher keeps your Neovim running smooth.",
-	Long: `Nvim-watcher prevents excess memory usage by:
-* Capping TabNine, Codeium, Copilot, and LSP processes
-* Updating packages asynchronously to prevent ERR_NO_FILES (OSX Ulimit) errors
-  via parallelized small batches using go workgroups`,
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
-	// Run: func(cmd *cobra.Command, args []string) { },
+	Short: "Nvim-watcher displays a live chart of the top neovim-related processes",
+	Long:  `Nvim-watcher displays a live chart of the top neovim-related processes`,
+	Run: func(cmd *cobra.Command, args []string) {
+	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

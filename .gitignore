@@ -1,6 +1,7 @@
-/.logs/*.log
-archive/
+/logs/*
+cmd/archive/
 I.idea
 node_modules
 package-lock.json
 package.json
+*.bk

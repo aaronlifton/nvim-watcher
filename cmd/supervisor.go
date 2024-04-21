@@ -12,19 +12,33 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/aaronlifton/nvim-watcher/log"
+	"go.uber.org/zap"
 
 	// "github.com/shirou/gopsutil/v3/cpu"
 	// "github.com/shirou/gopsutil/v3/load"
 	// "github.com/shirou/gopsutil/v3/net"
 	// "github.com/shirou/gopsutil/v3/process"
 	"github.com/go-co-op/gocron"
+	// gps "github.com/mitchellh/go-ps"
+	ps "github.com/shirou/gopsutil/v3/process"
+)
+
+var Executables = []string{"nvim", "TabNine", "codeium", "Copilot", "sourcery", "biomesyncd", "biome"}
+
+var (
+	initialized bool = false
+	Data        chan interface{}
 )
 
 type ProcessSupervisor interface {
 	Start() error
+	PeriodicTask()
+	GetAllProcessData() ([]WrappedProcess, error)
+	GetProcesses() []*WrappedProcess
 }
 type SupervisorConfig struct {
 	durationMinutes int
@@ -47,24 +61,24 @@ func (s *Supervisor) Start() {
 	// do this with gocron
 	var err error
 	scheduler := gocron.NewScheduler(time.UTC)
-	job, err := scheduler.Every(s.config.durationMinutes).Minutes().Do(Task)
+	job, err := scheduler.Every(s.config.durationMinutes).Minutes().Do(s.PeriodicTask)
 	if err != nil {
 		log.ConsoleLogger.Fatal(err)
 	}
-	log.ConsoleLogger.Info("Starting gocron")
-	log.ConsoleLogger.Infof("Job will run next at %s", job.NextRun)
+	log.FileLogger.Info("Starting gocron")
+	log.FileLogger.Infof("Job will run next at %s", job.NextRun)
 	// scheduler.StartAsync()
 	scheduler2 := gocron.NewScheduler(time.UTC)
-	job2, err := scheduler2.Every(10).Seconds().Do(StreamLog)
+	job2, err := scheduler2.Every(1).Seconds().Do(s.PeriodicTask)
 	if err != nil {
 		log.ConsoleLogger.Fatal(err)
 	}
-	log.ConsoleLogger.Infof("Job will run next at %s", job2.NextRun)
-	log.ConsoleLogger.Info("Starting blocking log stream")
+	log.FileLogger.Infof("Job will run next at %s", job2.NextRun)
+	log.FileLogger.Info("Starting blocking log stream")
 	scheduler2.StartBlocking()
 }
 
-func StreamLog() error {
+func (s *Supervisor) StreamLog() error {
 	files, err := filepath.Glob("logs/*.log")
 	if err != nil {
 		return err
@@ -90,33 +104,106 @@ func StreamLog() error {
 	return nil
 }
 
-func Task() error {
-	log.ConsoleLogger.Info("Running task")
+func (s *Supervisor) PeriodicTask() {
+	log.Init()
+	log.FileLogger.Info("Running task")
 	ts := time.Now().Format(time.RFC3339)
 	log.CronLogger.Info("Task ran at: ", ts)
 
-	processList := RunWatchProcesses()
-	processDataList := make([]ProcessData, len(processList))
-	for _, p := range processList {
-		if p == nil {
-			continue
-		}
-		pd, err := p.GetStats()
-		if err != nil {
-			log.ConsoleLogger.Fatal(err)
-			return err
-		}
-		log.ConsoleLogger.Infof(
-			"Found process: %v (%d: %v)\t Memory: %v\tCPU: %v\nAffinity: %v\nMemory RSS: %v\n",
-			pd.Name,
-			pd.Pid,
-			pd.Exe,
-			pd.PercentMemory,
-			pd.PercentCpu,
-			pd.CpuAffinity,
-			pd.PercentMemory,
+	processes := s.GetRelevantProcesses()
+	logProcesses(processes)
+
+	go Draw(processes)
+}
+
+func logProcesses(ps []*WrappedProcess) {
+	for _, process := range ps {
+		log.FileLogger.Info("Top 10 processes",
+			zap.Dict(
+				"process",
+				zap.String("name", process.Name),
+				zap.String("exe", process.Exe),
+				zap.String("memPercent", fmt.Sprintf("%f", process.PercentMemory)),
+				zap.String("cpuPercent", fmt.Sprintf("%f", process.PercentCpu)),
+			),
 		)
-		processDataList = append(processDataList, pd)
 	}
-	return nil
+}
+
+func (s *Supervisor) GetRelevantProcesses() []*WrappedProcess {
+	relevantProcesses := []*ps.Process{}
+	processList, err := ps.Processes()
+	if err != nil {
+		log.ConsoleLogger.Fatalf("Failed to get processes: %v", err)
+	}
+
+	for _, process := range processList {
+		name, _ := process.Exe()
+		name = filepath.Base(name)
+		if slices.Contains(Executables, name) {
+			relevantProcesses = append(relevantProcesses, process)
+		}
+	}
+	if len(relevantProcesses) == 0 {
+		log.ConsoleLogger.Fatal("No relevant processes found")
+		return []*WrappedProcess{}
+	}
+	wrappedProcesses := make([]*WrappedProcess, len(relevantProcesses))
+	for i, process := range relevantProcesses {
+		wp, err := NewWrappedProcess(process)
+		if err != nil {
+			log.ConsoleLogger.Fatalf("Failed to get process data: %v", err)
+		}
+
+		wrappedProcesses[i] = wp
+	}
+	return wrappedProcesses
+}
+
+func NewWrappedProcess(p *ps.Process) (*WrappedProcess, error) {
+	exe, _ := p.Exe()
+	name := filepath.Base(exe)
+	memPercent, err := p.MemoryPercent()
+	if err != nil {
+		log.ConsoleLogger.Fatal(err)
+		return &WrappedProcess{}, err
+	}
+	cpuPercent, err := p.CPUPercent()
+	if err != nil {
+		log.ConsoleLogger.Fatal(err)
+		return &WrappedProcess{}, err
+	}
+	cpuAffinity, _ := p.CPUAffinity()
+	memInfo, err := p.MemoryInfo()
+	if err != nil {
+		log.ConsoleLogger.Fatal(err)
+		return &WrappedProcess{}, err
+	}
+
+	ppid, err := p.Ppid()
+	if err != nil {
+		log.ConsoleLogger.Fatal(err)
+		return &WrappedProcess{}, err
+	}
+	return &WrappedProcess{
+		Exe:           exe,
+		Pid:           p.Pid,
+		PPid:          ppid,
+		Name:          name,
+		Memory:        memInfo.RSS,
+		CpuAffinity:   cpuAffinity,
+		PercentMemory: memPercent,
+		PercentCpu:    cpuPercent,
+	}, nil
+}
+
+func printProcesses(procs []*ps.Process) {
+	for _, proc := range procs {
+		log.FileLogger.Infof("Process: %v", proc)
+		name, err := proc.Name()
+		if err != nil {
+			log.ConsoleLogger.Fatalf("Failed to get process name: %v", err)
+		}
+		log.FileLogger.Infof("Process: %v", name)
+	}
 }

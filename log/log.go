@@ -37,7 +37,7 @@ func Init() {
 		Filename:   filepath.Join("logs", "nvim-watcher.log"),
 		MaxSize:    5, // megabytes
 		MaxBackups: 1,
-		MaxAge:     7, // days,
+		MaxAge:     1, // days,
 		LocalTime:  true,
 	})
 	gitWriter := zapcore.AddSync(&lumberjack.Logger{
@@ -50,7 +50,7 @@ func Init() {
 		Filename:   filepath.Join("logs", "gocron.log"),
 		MaxSize:    5, // megabytes
 		MaxBackups: 1,
-		MaxAge:     7, // days,
+		MaxAge:     1, // days,
 	})
 	// mw := zapcore.NewMultiWriteSyncer(
 	//    zapcore.AddSync(os.Stdout),
@@ -60,6 +60,7 @@ func Init() {
 	//        zapcore.NewCore(fileEncoder, zapcore.AddSync(file), zap.DebugLevel),
 	//    1    zapcore.NewCore(consoleEncoder, zapcore.AddSync(os.Stdout), zap.DebugLevel),
 	//    )
+
 	// core 1: FileLogger
 	// core 2: ConsoleLogger
 	// core 3: GitLogger
@@ -116,3 +117,24 @@ func LogGitCommand(cmd *exec.Cmd) {
 			zap.String("full_command", cmd.String())),
 	)
 }
+
+// type ProcessInfo struct {
+// 	Name          string
+// 	Exe           string
+// 	PercentMemory string
+// 	PercentCpu    string
+// }
+//
+// func LogProcesses(ps []ProcessInfo) {
+// 	for _, process := range ps {
+// 		FileLogger.Info("Top 10 processes",
+// 			zap.Dict(
+// 				"process",
+// 				zap.String("name", process.Name),
+// 				zap.String("exe", process.Exe),
+// 				zap.String("memPercent", process.PercentMemory),
+// 				zap.String("cpuPercent", process.PercentCpu),
+// 			),
+// 		)
+// 	}
+// }
