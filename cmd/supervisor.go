@@ -75,6 +75,7 @@ func (s *Supervisor) Start() {
 	}
 	log.FileLogger.Infof("Job will run next at %s", job2.NextRun)
 	log.FileLogger.Info("Starting blocking log stream")
+	go ListenForInput()
 	scheduler2.StartBlocking()
 }
 

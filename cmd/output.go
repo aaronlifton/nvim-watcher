@@ -17,7 +17,10 @@ import (
 	"golang.org/x/term"
 )
 
-var wg sync.WaitGroup
+var (
+	wg          sync.WaitGroup
+	currentSort string = "cpu"
+)
 
 func Draw(pd []*WrappedProcess) {
 	formattedData := Top10Processes(pd)
@@ -26,7 +29,11 @@ func Draw(pd []*WrappedProcess) {
 
 func Top10Processes(pd []*WrappedProcess) []WrappedProcess {
 	slices.SortFunc(pd, func(i, j *WrappedProcess) int {
-		return cmp.Compare(j.PercentCpu, i.PercentCpu)
+		if currentSort == "cpu" {
+			return cmp.Compare(j.PercentCpu, i.PercentCpu)
+		} else {
+			return cmp.Compare(j.Memory, i.Memory)
+		}
 	})
 	first10 := make([]WrappedProcess, 10)
 	for i := 0; i < 10; i++ {
@@ -46,7 +53,10 @@ func PrintChart(pd []WrappedProcess) {
 		return
 	}
 	log.FileLogger.Infof("Terminal height: %d", height)
-	maxHeight := min(len(pd)/2, height/2) + 3
+	maxHeight := min(len(pd)/2, height/2) + 2
+	if height%2 == 0 {
+		fmt.Println("")
+	}
 	log.FileLogger.Infof("Chart height: %d", height)
 	labels := make([]string, maxHeight)
 	data := make([][]float64, maxHeight)
@@ -58,7 +68,7 @@ func PrintChart(pd []WrappedProcess) {
 		data[i] = []float64{mem, cpu}
 	}
 	tgraph.Chart(
-		"Processes",
+		fmt.Sprintf("Top %d processes (Sort: %s)", len(data), currentSort),
 		labels,
 		data,
 		[]string{"Memory", "Cpu"},
@@ -69,14 +79,18 @@ func PrintChart(pd []WrappedProcess) {
 	)
 }
 
-// TODO: Implement keyboard controls
 func ListenForInput() {
 	keyboard.Listen(func(key keys.Key) (stop bool, err error) {
 		if key.Code == keys.CtrlC {
-			return true, nil // Stop listener by returning true on Ctrl+C
+			return true, nil
 		}
-
-		fmt.Println("\r" + key.String()) // Print every key press
-		return false, nil                // Return false to continue listening
+		if key.Code == keys.CtrlM {
+			if currentSort == "cpu" {
+				currentSort = "memory"
+			} else {
+				currentSort = "cpu"
+			}
+		}
+		return false, nil
 	})
 }

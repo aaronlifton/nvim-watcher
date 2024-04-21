@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/aaronlifton/nvim-watcher/cmd"
@@ -11,11 +10,12 @@ import (
 
 func main() {
 	app := &cli.App{
-		Name: "NvimSupervisor",
-		// Short: "Supervise processes left behind by AI plugins like ChatGPT, CodeGPT, TabNine, Codeium, and Copilot.",
-		Usage: "Clean up nvim and AI ghost processes that are slowing down your computer. Never accept a slow computer again.",
+		Name:  "NvimSupervisor",
+		Usage: "Supervise nvim and AI ghost processes that are slowing down your computer. Never accept a slow computer again.",
+		Description: `Visualize memory and CPU usage by Neovim and Neovim-related
+			processes such as AI plugins including ChatGPT, Codeium, Copilot,
+			Sourcegraph, and TabNine.`,
 		Action: func(*cli.Context) error {
-			fmt.Println("boom! I say!")
 			log.Init()
 			sv := cmd.NewSupervisor()
 			sv.Start()
