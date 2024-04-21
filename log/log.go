@@ -33,6 +33,13 @@ func Init() {
 	// config := zap.NewDevelopmentEncoderConfig()
 	config.EncodeTime = zapcore.ISO8601TimeEncoder
 
+	if _, err := os.Stat("logs"); os.IsNotExist(err) {
+		err = os.Mkdir("logs", 0755)
+		if err != nil {
+			stdLog.Fatal(err)
+		}
+	}
+
 	fileWriter := zapcore.AddSync(&lumberjack.Logger{
 		Filename:   filepath.Join("logs", "nvim-watcher.log"),
 		MaxSize:    5, // megabytes
