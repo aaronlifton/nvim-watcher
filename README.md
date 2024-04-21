@@ -1,10 +1,5 @@
 ## nvim-watcher
-[WIP]
 
-LazyVim often causes ERR_NO_FILES errors on my M2 Mac Mini, now that my neovim configuration has reached over 260 plugins, including dependencies. An interesting side-effect of this was the need to switch to Kitty terminal, after years of using Wezterm. Kitty solved the speed issue, and it runs just as fast as the purposely feature-lacking Alacritty on my computer.
+- Displays the top 10 (or less, depending on terminal height) nvim related processes and their CPU/memory usage
 
-The 2 main problems are:
-* Neovim almost _always_ crashes often when trying to update the plugin list.
-* AI plugins have runaway and ghost processses that need to be supervised.
-
-I chose go because I wanted to write something that could perform work in parallel easily.
+![Screen Recording 2024-04-21 at 4 29 12 PM](https://github.com/aaronlifton/nvim-watcher/assets/21133757/099b0c25-8d0c-49be-bab7-c61f68c33863)
