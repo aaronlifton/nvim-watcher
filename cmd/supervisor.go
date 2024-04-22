@@ -9,6 +9,7 @@ import (
 	// "os/exec"
 
 	"bufio"
+	"cmp"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,11 +28,15 @@ import (
 	ps "github.com/shirou/gopsutil/v3/process"
 )
 
-var Executables = []string{"nvim", "TabNine", "codeium", "Copilot", "sourcery", "biomesyncd", "biome"}
-
 var (
-	initialized bool = false
-	Data        chan interface{}
+	// Executables    = []string{"nvim", "biomesyncd", "biomed", "rubocop", "language_server_arm_macos", "codeium", "sourcery", "TabNine", "Copilot"}
+	Executables = []string{"nvim", "language_server_macos_arm"}
+	// PartialMatches = []string{"lsp", "codeium", "biome", "sourcery", "TabNine", "Copilot"}
+	PartialMatches        = []string{}
+	currentSort    string = "cpu"
+	currentView    string = "children"
+	initialized    bool   = false
+	Data           chan interface{}
 )
 
 type ProcessSupervisor interface {
@@ -131,60 +136,144 @@ func logProcesses(ps []*WrappedProcess) {
 	}
 }
 
+// func (s *Supervisor) GetRelevantProcesses() []*WrappedProcess {
+// 	relevantProcesses := []*ps.Process{}
+// 	processList, err := ps.Processes()
+// 	if err != nil {
+// 		log.ConsoleLogger.Fatalf("Failed to get processes: %v", err)
+// 	}
+//
+// 	for _, process := range processList {
+// 		exe, _ := process.Exe()
+// 		name := filepath.Base(exe)
+// 		// log.FileLogger.Info("Checking process", zap.String("name", exe))
+// 		if slices.Contains(Executables, name) {
+// 			relevantProcesses = append(relevantProcesses, process)
+// 			parent, err := process.Parent()
+// 			pparentName := "nil"
+// 			if err != nil {
+// 				log.ConsoleLogger.Fatalf("Failed to get parent: %v", err)
+// 			} else {
+// 				pparent, _ := parent.Parent()
+// 				pparentName, err = pparent.Name()
+// 			}
+//
+// 			log.ConsoleLogger.Infof("%s -> Parent: %s -> %s", name, pparentName)
+// 		} else {
+// 			for _, partialMatch := range PartialMatches {
+// 				if strings.Contains(strings.ToLower(exe), strings.ToLower(partialMatch)) {
+// 					relevantProcesses = append(relevantProcesses, process)
+// 				}
+// 			}
+// 		}
+// 	}
+//
+// 	log.ConsoleLogger.Fatal("Done")
+// 	if len(relevantProcesses) == 0 {
+// 		log.ConsoleLogger.Fatal("No relevant processes found")
+// 		return []*WrappedProcess{}
+// 	}
+// }
+
 func (s *Supervisor) GetRelevantProcesses() []*WrappedProcess {
-	relevantProcesses := []*ps.Process{}
 	processList, err := ps.Processes()
 	if err != nil {
 		log.ConsoleLogger.Fatalf("Failed to get processes: %v", err)
 	}
-
+	nvimProcessIds := make(map[int32]bool)
 	for _, process := range processList {
-		name, _ := process.Exe()
-		name = filepath.Base(name)
-		if slices.Contains(Executables, name) {
-			relevantProcesses = append(relevantProcesses, process)
+		exe, _ := process.Exe()
+		name := filepath.Base(exe)
+		parent, _ := process.Parent()
+		if parent == nil {
+			continue
+		}
+		parentName, _ := parent.Name()
+		parentIsNvim := parentName == "nvim"
+		if name == "nvim" {
+			nvimProcessIds[process.Pid] = parentIsNvim
 		}
 	}
-	if len(relevantProcesses) == 0 {
-		log.ConsoleLogger.Fatal("No relevant processes found")
-		return []*WrappedProcess{}
+	keys := make([]int32, 0, len(nvimProcessIds))
+	for k := range nvimProcessIds {
+		keys = append(keys, k)
 	}
-	wrappedProcesses := make([]*WrappedProcess, len(relevantProcesses))
-	for i, process := range relevantProcesses {
-		wp, err := NewWrappedProcess(process)
-		if err != nil {
-			log.ConsoleLogger.Fatalf("Failed to get process data: %v", err)
-		}
 
+	children := []*ps.Process{}
+	tree := make(map[*ps.Process][]*ps.Process)
+	for _, process := range processList {
+		name, _ := process.Name()
+		if name == "nvim" {
+			continue
+		}
+		parent, err := process.Parent()
+		if err != nil {
+			continue
+		}
+		if slices.Contains(keys, parent.Pid) {
+			// children = append(children, process)
+			if tree[parent] == nil {
+				tree[parent] = []*ps.Process{process}
+			} else {
+				tree[parent] = append(tree[parent], process)
+			}
+			children = append(children, process)
+		}
+	}
+
+	parents := make([]*ps.Process, 0, len(tree))
+	for parent, children := range tree {
+		for _, child := range children {
+			children = append(children, child)
+			parents = append(parents, parent)
+		}
+	}
+	wrappedProcesses := make([]*WrappedProcess, len(children))
+	var processGroup []*ps.Process
+	if currentView == "parent" {
+		processGroup = parents
+	} else {
+		processGroup = children
+	}
+	for i, process := range processGroup {
+		wp := NewWrappedProcess(process)
 		wrappedProcesses[i] = wp
 	}
+
+	slices.SortFunc(wrappedProcesses, func(i, j *WrappedProcess) int {
+		if currentSort == "cpu" {
+			return cmp.Compare(j.PercentCpu, i.PercentCpu)
+		} else {
+			return cmp.Compare(j.Memory, i.Memory)
+		}
+	})
 	return wrappedProcesses
 }
 
-func NewWrappedProcess(p *ps.Process) (*WrappedProcess, error) {
+func NewWrappedProcess(p *ps.Process) *WrappedProcess {
 	exe, _ := p.Exe()
 	name := filepath.Base(exe)
 	memPercent, err := p.MemoryPercent()
 	if err != nil {
-		log.ConsoleLogger.Fatal(err)
-		return &WrappedProcess{}, err
+		log.FileLogger.Infof("Failed to get %s.MemoryPercent: %v", name, err)
+		return &WrappedProcess{}
 	}
 	cpuPercent, err := p.CPUPercent()
 	if err != nil {
-		log.ConsoleLogger.Fatal(err)
-		return &WrappedProcess{}, err
+		log.FileLogger.Fatalf("Failed to get %s.CpuPercent: %v", name, err)
+		return &WrappedProcess{}
 	}
 	cpuAffinity, _ := p.CPUAffinity()
 	memInfo, err := p.MemoryInfo()
 	if err != nil {
-		log.ConsoleLogger.Fatal(err)
-		return &WrappedProcess{}, err
+		log.FileLogger.Fatalf("Failed to get %s.Meminfo: %v", name, err)
+		return &WrappedProcess{}
 	}
 
 	ppid, err := p.Ppid()
 	if err != nil {
-		log.ConsoleLogger.Fatal(err)
-		return &WrappedProcess{}, err
+		log.FileLogger.Fatalf("Failed to get %s.Ppid: %v", name, err)
+		return &WrappedProcess{}
 	}
 	return &WrappedProcess{
 		Exe:           exe,
@@ -195,7 +284,7 @@ func NewWrappedProcess(p *ps.Process) (*WrappedProcess, error) {
 		CpuAffinity:   cpuAffinity,
 		PercentMemory: memPercent,
 		PercentCpu:    cpuPercent,
-	}, nil
+	}
 }
 
 func printProcesses(procs []*ps.Process) {
