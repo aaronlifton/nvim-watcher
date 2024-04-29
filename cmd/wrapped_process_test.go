@@ -11,8 +11,8 @@ package cmd
 import (
 	exec "os/exec"
 	reflect "reflect"
+	"testing"
 
-	cmd "github.com/aaronlifton/nvim-watcher/cmd"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -66,8 +66,9 @@ func (mr *MockWrappedProcessManagerMockRecorder) Kill(cmd any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Kill", reflect.TypeOf((*MockWrappedProcessManager)(nil).Kill), cmd)
 }
 
-// 	ctrl := gomock.NewController(t)
-// 	m := NewMockWrappedProcessManager(ctrl)
-// 	m.EXPECT().
-//
-// }
+func TestKill(t *testing.T) {
+	// TODO: Implement tests
+	// 	ctrl := gomock.NewController(t)
+	// 	m := NewMockWrappedProcessManager(ctrl)
+	// 	m.EXPECT().
+}

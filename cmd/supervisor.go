@@ -4,10 +4,6 @@ Copyright © 2024 Aaron Lifton <aaronlifton@gmail.com>
 package cmd
 
 import (
-
-	// "os"
-	// "os/exec"
-
 	"bufio"
 	"cmp"
 	"fmt"
@@ -24,8 +20,6 @@ import (
 )
 
 var (
-	// Executables = []string{"nvim", "language_server_macos_arm"}
-	// PartialMatches        = []string{}
 	Executables           = []string{"nvim", "language_server_arm_macos", "copilot", "sourcery", "biomesyncd", "biomed"}
 	PartialMatches        = []string{"lsp", "biome", "rubocop", "codeium", "sourcery", "TabNine", "Copilot"}
 	currentSort    string = "cpu"
