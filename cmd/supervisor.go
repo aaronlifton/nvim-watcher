@@ -19,20 +19,15 @@ import (
 	"github.com/aaronlifton/nvim-watcher/log"
 	"go.uber.org/zap"
 
-	// "github.com/shirou/gopsutil/v3/cpu"
-	// "github.com/shirou/gopsutil/v3/load"
-	// "github.com/shirou/gopsutil/v3/net"
-	// "github.com/shirou/gopsutil/v3/process"
 	"github.com/go-co-op/gocron"
-	// gps "github.com/mitchellh/go-ps"
 	ps "github.com/shirou/gopsutil/v3/process"
 )
 
 var (
-	// Executables    = []string{"nvim", "biomesyncd", "biomed", "rubocop", "language_server_arm_macos", "codeium", "sourcery", "TabNine", "Copilot"}
-	Executables = []string{"nvim", "language_server_macos_arm"}
-	// PartialMatches = []string{"lsp", "codeium", "biome", "sourcery", "TabNine", "Copilot"}
-	PartialMatches        = []string{}
+	// Executables = []string{"nvim", "language_server_macos_arm"}
+	// PartialMatches        = []string{}
+	Executables           = []string{"nvim", "language_server_arm_macos", "copilot", "sourcery", "biomesyncd", "biomed"}
+	PartialMatches        = []string{"lsp", "biome", "rubocop", "codeium", "sourcery", "TabNine", "Copilot"}
 	currentSort    string = "cpu"
 	currentView    string = "children"
 	initialized    bool   = false
@@ -61,9 +56,6 @@ func NewSupervisor() *Supervisor {
 }
 
 func (s *Supervisor) Start() {
-	// every 30 minutes, run GetProcesses, and if the returned array does not contain nvim or vscode, kill all the processes
-	// start the schedule
-	// do this with gocron
 	var err error
 	scheduler := gocron.NewScheduler(time.UTC)
 	job, err := scheduler.Every(s.config.durationMinutes).Minutes().Do(s.PeriodicTask)
@@ -72,7 +64,6 @@ func (s *Supervisor) Start() {
 	}
 	log.FileLogger.Info("Starting gocron")
 	log.FileLogger.Infof("Job will run next at %s", job.NextRun)
-	// scheduler.StartAsync()
 	scheduler2 := gocron.NewScheduler(time.UTC)
 	job2, err := scheduler2.Every(1).Seconds().Do(s.PeriodicTask)
 	if err != nil {
@@ -136,45 +127,6 @@ func logProcesses(ps []*WrappedProcess) {
 	}
 }
 
-// func (s *Supervisor) GetRelevantProcesses() []*WrappedProcess {
-// 	relevantProcesses := []*ps.Process{}
-// 	processList, err := ps.Processes()
-// 	if err != nil {
-// 		log.ConsoleLogger.Fatalf("Failed to get processes: %v", err)
-// 	}
-//
-// 	for _, process := range processList {
-// 		exe, _ := process.Exe()
-// 		name := filepath.Base(exe)
-// 		// log.FileLogger.Info("Checking process", zap.String("name", exe))
-// 		if slices.Contains(Executables, name) {
-// 			relevantProcesses = append(relevantProcesses, process)
-// 			parent, err := process.Parent()
-// 			pparentName := "nil"
-// 			if err != nil {
-// 				log.ConsoleLogger.Fatalf("Failed to get parent: %v", err)
-// 			} else {
-// 				pparent, _ := parent.Parent()
-// 				pparentName, err = pparent.Name()
-// 			}
-//
-// 			log.ConsoleLogger.Infof("%s -> Parent: %s -> %s", name, pparentName)
-// 		} else {
-// 			for _, partialMatch := range PartialMatches {
-// 				if strings.Contains(strings.ToLower(exe), strings.ToLower(partialMatch)) {
-// 					relevantProcesses = append(relevantProcesses, process)
-// 				}
-// 			}
-// 		}
-// 	}
-//
-// 	log.ConsoleLogger.Fatal("Done")
-// 	if len(relevantProcesses) == 0 {
-// 		log.ConsoleLogger.Fatal("No relevant processes found")
-// 		return []*WrappedProcess{}
-// 	}
-// }
-
 func (s *Supervisor) GetRelevantProcesses() []*WrappedProcess {
 	processList, err := ps.Processes()
 	if err != nil {
@@ -211,7 +163,6 @@ func (s *Supervisor) GetRelevantProcesses() []*WrappedProcess {
 			continue
 		}
 		if slices.Contains(keys, parent.Pid) {
-			// children = append(children, process)
 			if tree[parent] == nil {
 				tree[parent] = []*ps.Process{process}
 			} else {
@@ -225,14 +176,21 @@ func (s *Supervisor) GetRelevantProcesses() []*WrappedProcess {
 	for parent, children := range tree {
 		for _, child := range children {
 			children = append(children, child)
-			parents = append(parents, parent)
+			idx := slices.IndexFunc(parents, func(p *ps.Process) bool {
+				return p.Pid == parent.Pid
+			})
+			if idx == -1 {
+				parents = append(parents, parent)
+			}
 		}
 	}
-	wrappedProcesses := make([]*WrappedProcess, len(children))
+	var wrappedProcesses []*WrappedProcess
 	var processGroup []*ps.Process
 	if currentView == "parent" {
+		wrappedProcesses = make([]*WrappedProcess, len(parents))
 		processGroup = parents
 	} else {
+		wrappedProcesses = make([]*WrappedProcess, len(children))
 		processGroup = children
 	}
 	for i, process := range processGroup {
@@ -242,6 +200,9 @@ func (s *Supervisor) GetRelevantProcesses() []*WrappedProcess {
 
 	slices.SortFunc(wrappedProcesses, func(i, j *WrappedProcess) int {
 		if currentSort == "cpu" {
+			if j == nil || i == nil {
+				log.ConsoleLogger.Fatal("here")
+			}
 			return cmp.Compare(j.PercentCpu, i.PercentCpu)
 		} else {
 			return cmp.Compare(j.Memory, i.Memory)

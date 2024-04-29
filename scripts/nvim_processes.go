@@ -4,22 +4,13 @@ Copyright © 2024 Aaron Lifton <aaronlifton@gmail.com>
 package main
 
 import (
-
-	// "os"
-	// "os/exec"
-
+	"os/user"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/aaronlifton/nvim-watcher/log"
-
-	// "github.com/shirou/gopsutil/v3/cpu"
-	// "github.com/shirou/gopsutil/v3/load"
-	// "github.com/shirou/gopsutil/v3/net"
-	// "github.com/shirou/gopsutil/v3/process"
-
-	// gps "github.com/mitchellh/go-ps"
 	ps "github.com/shirou/gopsutil/v3/process"
 )
 
@@ -27,15 +18,12 @@ func main() {
 	log.Init()
 	log.FileLogger.Info("Running task: nvim_processes")
 
-	// GetParents()
 	GetNvimChildren()
 }
 
 var (
-	// Executables    = []string{"nvim", "biomesyncd", "biomed", "rubocop", , "codeium", "sourcery", "TabNine", "Copilot"}
-	Executables = []string{"nvim", "language_server_arm_macos", "copilot", "sourcery"}
-	// PartialMatches = []string{"lsp", "codeium", "biome", "sourcery", "TabNine", "Copilot"}
-	PartialMatches = []string{"lsp", "biome"}
+	Executables    = []string{"nvim", "language_server_arm_macos", "copilot", "sourcery", "biomesyncd", "biomed"}
+	PartialMatches = []string{"lsp", "biome", "rubocop", "codeium", "sourcery", "TabNine", "Copilot"}
 )
 
 func logParents(process *ps.Process, name string) {
@@ -60,7 +48,6 @@ func GetParents() {
 	for _, process := range processList {
 		exe, _ := process.Exe()
 		name := filepath.Base(exe)
-		// log.FileLogger.Info("Checking process", zap.String("name", exe))
 		if slices.Contains(Executables, name) {
 			logParents(process, name)
 		} else {
@@ -97,8 +84,9 @@ func GetNvimChildren() {
 	}
 	log.ConsoleLogger.Infof("Found %d nvim processes", len(nvimProcessIds))
 
-	// children := []*ps.Process{}
-	tree := make(map[int32][]*ps.Process)
+	children := []*ps.Process{}
+	parents := []*ps.Process{}
+	tree := make(map[*ps.Process][]*ps.Process)
 	for _, process := range processList {
 		name, _ := process.Name()
 		if name == "nvim" {
@@ -109,24 +97,65 @@ func GetNvimChildren() {
 			continue
 		}
 		if slices.Contains(keys, parent.Pid) {
-			// children = append(children, process)
-			if tree[parent.Pid] == nil {
-				tree[parent.Pid] = []*ps.Process{process}
+			children = append(children, process)
+			parents = append(parents, parent)
+			if tree[parent] == nil {
+				tree[parent] = []*ps.Process{process}
 			} else {
-				tree[parent.Pid] = append(tree[parent.Pid], process)
+				tree[parent] = append(tree[parent], process)
 			}
 		}
 	}
-	// for _, process := range children {
-	// 	name, _ := process.Name()
-	// 	log.ConsoleLogger.Infof("Child: %s", name)
-	// }
+	log.ConsoleLogger.Info("Child processes:\n")
+	for _, process := range children {
+		name, _ := process.Name()
+		log.ConsoleLogger.Infof("Child: %s", name)
+	}
+	user, err := user.Current()
+	home := ""
+	if err == nil {
+		home = user.HomeDir
+	}
+	childrenMaxNameLen := maxNameLen(children)
+	parentsMaxNameLen := maxNameLen(parents)
+	log.ConsoleLogger.Info("\n\nTree:\n")
 	for parent, children := range tree {
-		log.ConsoleLogger.Infof("Parent: %d", parent)
+		parentName, err := parent.Name()
+		if err != nil {
+			parentName = "unknown"
+		}
+		exe, _ := parent.Exe()
+		exe = strings.Replace(exe, home, "~", 1)
+		log.ConsoleLogger.Infof(
+			"Parent: %s (%d)%s%s",
+			parentName,
+			parent.Pid,
+			strings.Repeat(" ", parentsMaxNameLen-len(parentName)+len(strconv.Itoa(int(parent.Pid)))+2),
+			exe,
+		)
 		for _, child := range children {
 			name, _ := child.Name()
 			exe, _ := child.Exe()
-			log.ConsoleLogger.Infof("\tChild: %s (%s)", name, exe)
+			exe = strings.Replace(exe, home, "~", 1)
+			log.ConsoleLogger.Infof(
+				"\tChild: %s%s%s",
+				name,
+				strings.Repeat(" ", childrenMaxNameLen-len(name)+1),
+				exe,
+			)
 		}
 	}
+}
+
+func maxNameLen(processes []*ps.Process) int {
+	nameLens := []int{}
+	for _, proc := range processes {
+		nameLen := 0
+		name, err := proc.Name()
+		if err == nil {
+			nameLen = len(name)
+		}
+		nameLens = append(nameLens, nameLen)
+	}
+	return slices.Max(nameLens)
 }

@@ -11,9 +11,6 @@ import (
 	"atomicgo.dev/keyboard/keys"
 	"github.com/aaronlifton/nvim-watcher/log"
 
-	// "github.com/vbauerster/mpb/v8"
-	// "github.com/vbauerster/mpb/v8/decor"
-
 	tgraph "github.com/daoleno/tgraph"
 	"golang.org/x/term"
 )
@@ -54,9 +51,6 @@ func PrintChart(pd []WrappedProcess) {
 	}
 	log.FileLogger.Infof("Terminal height: %d", height)
 	maxHeight := min(len(pd)/2, height/2) + 2
-	// if height%2 == 0 {
-	// 	fmt.Println("")
-	// }
 	log.FileLogger.Infof("Chart height: %d", height)
 	labels := make([]string, maxHeight)
 	data := make([][]float64, maxHeight)
